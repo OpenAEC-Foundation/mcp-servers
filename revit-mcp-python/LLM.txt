@@ -1,0 +1,533 @@
+# Revit MCP Server - Development Context Document
+
+## **Overview**
+
+This is a context document for LLMs tasked with developing functionalities for the Revit MCP Python implementation.
+
+**Version:** 2.1.0  
+**Last Updated:** January 27, 2026  
+**Status:** Production Ready - 34 tools, 35 routes
+
+## **Terms**
+- **MCP**: Model Context Protocol - enables LLM integration with external tools
+- **pyRevit**: Revit add-in for Python scripting (IronPython 2.7)
+- **Routes Module**: pyRevit's HTTP micro-framework for web APIs inside Revit
+- **IExternalEventHandler**: Revit mechanism for thread-safe API access
+
+---
+
+## **Project Architecture**
+
+### **Communication Flow**
+```
+Claude Desktop → MCP Server (Python 3.x) → HTTP → pyRevit Routes (IronPython 2.7) → Revit API
+                 Port: stdio                Port: 48884
+```
+
+### **Folder Structure**
+
+```
+revit-mcp-python\                       # Project root
+├── revit-mcp-python\                    # MCP Client (runs via Claude Desktop)
+│   ├── main.py                          # FastMCP server entry point
+│   ├── tools\                           # MCP Tool definitions (34 tools)
+│   │   ├── __init__.py                  # Tool registration system
+│   │   ├── utils.py                     # Response formatting
+│   │   ├── status_tools.py              # 2 tools
+│   │   ├── model_tools.py               # 1 tool
+│   │   ├── view_tools.py                # 4 tools
+│   │   ├── family_tools.py              # 4 tools (incl. place_workplane_families)
+│   │   ├── selection_tools.py           # 5 tools
+│   │   ├── parameter_tools.py           # 5 tools
+│   │   ├── modification_tools.py        # 7 tools (incl. place_workplane_windows)
+│   │   ├── colors_tools.py              # 3 tools
+│   │   ├── ifc_tools.py                 # 2 tools
+│   │   └── code_execution_tools.py      # 1 tool
+│   ├── README.md
+│   ├── LLM.txt                          # This file
+│   ├── CHANGELOG.md
+│   ├── LESSONS_LEARNED.md
+│   └── SKILL.md
+│
+└── (Installed to pyRevit extensions folder)
+    revit-mcp-python.extension\          # pyRevit Server (runs inside Revit)
+        ├── startup.py                   # Route registration entry point
+        ├── extension.json               # pyRevit extension metadata
+        └── revit_mcp\                   # Route handler modules (35 routes)
+            ├── __init__.py
+            ├── utils.py                 # IronPython utilities
+            ├── status.py                # 1 route
+            ├── model_info.py            # 1 route
+            ├── views.py                 # 4 routes
+            ├── placement.py             # 5 routes
+            ├── selection.py             # 5 routes
+            ├── parameters.py            # 6 routes
+            ├── modification.py          # 7 routes
+            ├── colors.py                # 3 routes
+            ├── ifc_query.py             # 2 routes
+            └── code_execution.py        # 1 route
+```
+
+---
+
+## **Available Tools (34 Total)**
+
+### **Status & Model Info**
+| Tool | Endpoint | Description |
+|------|----------|-------------|
+| `get_revit_status` | GET `/status/` | API health check |
+| `get_revit_model_info` | GET `/model_info/` | Model title, path, counts |
+| `list_levels` | GET `/list_levels/` | All levels with elevations |
+
+### **View Tools**
+| Tool | Endpoint | Description |
+|------|----------|-------------|
+| `get_revit_view` | GET `/get_view/<name>` | Export view as PNG |
+| `list_revit_views` | GET `/list_views/` | All exportable views |
+| `get_current_view_info` | GET `/current_view_info/` | Active view details |
+| `get_current_view_elements` | GET `/current_view_elements/` | Elements in current view |
+
+### **Family Tools**
+| Tool | Endpoint | Description |
+|------|----------|-------------|
+| `place_family` | POST `/place_family/` | Place family at location |
+| `place_workplane_families` | POST `/place_workplane_families/` | **Batch WorkPlaneBased placement** |
+| `list_families` | GET `/list_families/` | Available family types |
+| `list_family_categories` | GET `/list_family_categories/` | Family categories |
+
+### **Selection & Inspection Tools**
+| Tool | Endpoint | Description |
+|------|----------|-------------|
+| `get_active_selection` | GET `/active_selection/` | Current selection info |
+| `inspect_selected_element` | GET `/inspect_selected/<idx>` | Selected element details |
+| `inspect_element` | GET `/inspect_element/<id>` | Any element by ID |
+| `get_link_status` | GET `/link_status/` | Linked models info |
+| `quick_count` | POST `/quick_count/` | Fast filtered counts |
+
+### **Parameter Tools**
+| Tool | Endpoint | Description |
+|------|----------|-------------|
+| `get_element_parameter` | POST `/get_parameter/` | Get single parameter |
+| `set_element_parameter` | POST `/set_parameter/` | Set single parameter |
+| `get_all_parameters` | POST `/get_all_parameters/` | All parameters |
+| `set_parameters_bulk` | POST `/set_parameters_bulk/` | Multiple params on one element |
+| `set_parameters_multi_elements` | POST `/set_parameters_multi/` | Same params on multiple elements |
+
+### **Modification Tools**
+| Tool | Endpoint | Description |
+|------|----------|-------------|
+| `batch_update` | POST `/batch_update/` | Batch parameter updates |
+| `create_sheet` | POST `/create_sheet/` | Create new sheet |
+| `place_view_on_sheet` | POST `/place_view_on_sheet/` | Place view on sheet |
+| `create_walls_at_lines` | POST `/create_walls_at_lines/` | Create walls from lines |
+| `batch_family_placement` | POST `/batch_family_placement/` | Place multiple families |
+| `place_workplane_windows` | POST `/place_workplane_windows/` | **Window placement with auto-rotation** |
+| `coordinate_converter` | POST `/coordinate_converter/` | Unit/coordinate conversion |
+
+### **Color Tools**
+| Tool | Endpoint | Description |
+|------|----------|-------------|
+| `color_splash` | POST `/color_splash/` | Color by parameter |
+| `clear_colors` | POST `/clear_colors/` | Remove color overrides |
+| `list_category_parameters` | POST `/list_category_parameters/` | Available parameters |
+
+### **IFC Tools**
+| Tool | Endpoint | Description |
+|------|----------|-------------|
+| `query_ifc_elements` | POST `/query_ifc_elements/` | Search IFC elements |
+| `get_ifc_element_properties` | POST `/get_ifc_element_properties/` | IFC element properties |
+
+### **Code Execution**
+| Tool | Endpoint | Description |
+|------|----------|-------------|
+| `execute_revit_code` | POST `/execute_code/` | Run IronPython code (with `use_transaction` option) |
+
+---
+
+## **Threading & Transaction Safety**
+
+### **Critical Pattern: `doc` Parameter**
+
+When a route handler includes `doc` as a parameter, pyRevit automatically:
+1. Queues the handler via `IExternalEventHandler`
+2. Executes on Revit's main UI thread
+3. Passes the active document as the argument
+
+```python
+# ❌ WRONG - Runs on background thread, transactions FAIL
+@api.route('/endpoint/', methods=["POST"])
+def handler(request):
+    doc = revit.doc  # Wrong thread!
+    with Transaction(doc, "Op") as t:
+        t.Start()  # FAILS with InvalidOperationException
+
+# ✅ CORRECT - Runs on main thread
+@api.route('/endpoint/', methods=["POST"])
+def handler(doc, request):  # 'doc' triggers IExternalEventHandler
+    with Transaction(doc, "Op") as t:
+        t.Start()  # WORKS!
+```
+
+### **Available Handler Parameters**
+| Parameter | Type | When to Use |
+|-----------|------|-------------|
+| `doc` | Document | All model operations |
+| `uidoc` | UIDocument | Selection, active view |
+| `request` | Request | POST data access |
+| `uiapp` | UIApplication | Application-level ops |
+
+---
+
+## **Writing New Functions**
+
+### **Part 1: Create Route Handler (pyRevit Extension)**
+
+File: `revit-mcp-python.extension/revit_mcp/your_module.py`
+
+```python
+# -*- coding: UTF-8 -*-
+"""Your Module for Revit MCP"""
+
+from pyrevit import routes, revit, DB
+from pyrevit.revit import Transaction
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def register_your_routes(api):
+    """Register routes with the API"""
+
+    @api.route('/your_get_endpoint/', methods=["GET"])
+    def your_get_handler(doc):
+        """
+        GET handler - receives doc for thread-safe execution.
+        
+        NOTE: doc parameter triggers IExternalEventHandler.
+        """
+        try:
+            # Read operations
+            result = {"count": 0, "items": []}
+            
+            collector = DB.FilteredElementCollector(doc)\
+                .OfCategory(DB.BuiltInCategory.OST_Walls)\
+                .WhereElementIsNotElementType()
+            
+            for elem in collector:
+                result["count"] += 1
+            
+            return routes.make_response(data={"status": "success", **result})
+            
+        except Exception as e:
+            logger.error("Failed: {}".format(str(e)))
+            return routes.make_response(data={"error": str(e)}, status=500)
+
+    @api.route('/your_post_endpoint/', methods=["POST"])
+    def your_post_handler(doc, request):
+        """
+        POST handler with model modification.
+        
+        NOTE: doc parameter triggers IExternalEventHandler for thread safety.
+        """
+        try:
+            # Parse request data
+            data = json.loads(request.data) if isinstance(request.data, str) else request.data
+            
+            # Validate
+            if not data.get("required_field"):
+                return routes.make_response(
+                    data={"error": "required_field is required"},
+                    status=400
+                )
+            
+            results = {"created": [], "failed": []}
+            
+            # Use transaction for modifications
+            with Transaction(doc, "MCP Your Operation") as t:
+                t.Start()
+                
+                # Your modification logic here
+                # ...
+                
+                t.Commit()
+            
+            return routes.make_response(data={"status": "success", **results})
+            
+        except Exception as e:
+            import traceback
+            logger.error("Failed: {}".format(traceback.format_exc()))
+            return routes.make_response(data={"error": str(e)}, status=500)
+
+    logger.info("Your routes registered")
+```
+
+### **Part 2: Create MCP Tool (Client)**
+
+File: `revit-mcp-python/tools/your_tools.py`
+
+```python
+# -*- coding: utf-8 -*-
+"""Your tools for MCP server"""
+
+from mcp.server.fastmcp import Context
+from typing import Dict, Any, List, Optional
+from .utils import format_response
+
+
+def register_your_tools(mcp, revit_get, revit_post):
+    """Register tools with MCP server"""
+
+    @mcp.tool()
+    async def your_get_tool(ctx: Context = None) -> str:
+        """
+        Get something from Revit.
+
+        Returns:
+            JSON with count and items
+
+        Example:
+            your_get_tool()
+        """
+        if ctx:
+            ctx.info("Getting data...")
+        response = await revit_get("/your_get_endpoint/", ctx)
+        return format_response(response)
+
+    @mcp.tool()
+    async def your_post_tool(
+        required_field: str,
+        optional_field: int = 0,
+        ctx: Context = None
+    ) -> str:
+        """
+        Do something in Revit.
+
+        Args:
+            required_field: Description of required field
+            optional_field: Description (default: 0)
+
+        Returns:
+            JSON with created items and any failures
+
+        Example:
+            your_post_tool(required_field="value", optional_field=10)
+        """
+        if ctx:
+            ctx.info("Executing operation...")
+
+        data = {
+            "required_field": required_field,
+            "optional_field": optional_field
+        }
+        response = await revit_post("/your_post_endpoint/", data, ctx, timeout=60.0)
+        return format_response(response)
+```
+
+### **Part 3: Register Modules**
+
+**In `startup.py`:**
+```python
+from revit_mcp.your_module import register_your_routes
+
+def register_routes():
+    # ... existing registrations ...
+    register_your_routes(api)
+```
+
+**In `tools/__init__.py`:**
+```python
+from .your_tools import register_your_tools
+
+def register_tools(mcp_server, revit_get_func, revit_post_func, revit_image_func):
+    # ... existing registrations ...
+    register_your_tools(mcp_server, revit_get_func, revit_post_func)
+```
+
+---
+
+## **IronPython 2.7 Compatibility**
+
+### **String Formatting**
+```python
+# ❌ NO f-strings
+message = f"Count: {count}"
+
+# ✅ Use .format()
+message = "Count: {}".format(count)
+```
+
+### **Safe Element Property Access**
+```python
+# ❌ Can fail on some elements
+name = element.Name
+
+# ✅ Safe pattern
+from pyrevit import DB
+name = DB.Element.Name.__get__(element)
+
+# ✅ For FamilySymbol
+family_name = symbol.FamilyName
+type_name = DB.Element.Name.__get__(symbol)
+```
+
+### **Unit Conversion**
+```python
+# Revit uses feet internally
+FEET_TO_MM = 304.8
+
+# Convert mm to feet for Revit API
+x_feet = x_mm / 304.8
+
+# Convert feet to mm for display
+x_mm = x_feet * 304.8
+```
+
+---
+
+## **Testing**
+
+### **Direct Route Testing (PowerShell)**
+```powershell
+# GET request
+Invoke-RestMethod "http://localhost:48884/revit_mcp/status/"
+
+# POST request
+$body = @{ category = "Windows" } | ConvertTo-Json
+Invoke-RestMethod "http://localhost:48884/revit_mcp/quick_count/" `
+    -Method POST -Body $body -ContentType "application/json"
+```
+
+### **MCP Inspector**
+```bash
+mcp dev main.py
+# Access http://127.0.0.1:6274
+```
+
+### **After Changes**
+| Changed | Action Required |
+|---------|-----------------|
+| Server routes | Restart Revit |
+| MCP tools | Restart Claude Desktop |
+| Both | Restart both |
+
+---
+
+## **Common Patterns**
+
+### **WorkPlaneBased Family Placement**
+```python
+# Server-side pattern for windows/doors
+normal = DB.XYZ(normal_x, normal_y, 0).Normalize()
+plane = DB.Plane.CreateByNormalAndOrigin(normal, point)
+sketch_plane = DB.SketchPlane.Create(doc, plane)
+
+instance = doc.Create.NewFamilyInstance(
+    point, symbol, sketch_plane,
+    DB.Structure.StructuralType.NonStructural
+)
+
+# Rotation for normal_y > 0 (upside-down fix)
+if normal_y > 0:
+    axis = DB.Line.CreateBound(point, point + DB.XYZ.BasisZ)
+    DB.ElementTransformUtils.RotateElement(doc, instance.Id, axis, math.pi)
+```
+
+### **Filtered Element Collector**
+```python
+# Get all walls
+collector = DB.FilteredElementCollector(doc)\
+    .OfCategory(DB.BuiltInCategory.OST_Walls)\
+    .WhereElementIsNotElementType()
+
+# Get family symbols
+symbols = DB.FilteredElementCollector(doc)\
+    .OfCategory(DB.BuiltInCategory.OST_Windows)\
+    .OfClass(DB.FamilySymbol)
+```
+
+### **Transaction Pattern**
+```python
+from pyrevit.revit import Transaction
+
+with Transaction(doc, "MCP Operation Name") as t:
+    t.Start()
+    try:
+        # Modifications here
+        t.Commit()
+    except:
+        t.RollBack()
+        raise
+```
+
+---
+
+## **Error Handling**
+
+### **Server Side**
+```python
+try:
+    # Operation
+    return routes.make_response(data={"status": "success"})
+except Exception as e:
+    import traceback
+    return routes.make_response(
+        data={"error": str(e), "trace": traceback.format_exc()},
+        status=500
+    )
+```
+
+### **Client Side**
+```python
+try:
+    response = await revit_post("/endpoint/", data, ctx)
+    return format_response(response)
+except Exception as e:
+    if ctx:
+        ctx.error("Failed: {}".format(str(e)))
+    return "Error: {}".format(str(e))
+```
+
+---
+
+## **Configuration**
+
+### **Claude Desktop Config**
+`%APPDATA%\Claude\claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "Revit MCP Python": {
+      "command": "<path-to-venv>\\Scripts\\python.exe",
+      "args": ["<path-to-project>/revit-mcp-python/main.py"]
+    }
+  }
+}
+```
+
+### **pyRevit Routes**
+- Port: 48884 (first instance)
+- Enable: pyRevit Settings → Routes → Enable Routes Server
+- Requires Revit restart after enabling
+
+---
+
+## **Troubleshooting**
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| "Route does not exist" | Missing URL prefix | Use `/revit_mcp/` prefix |
+| Transaction fails | Wrong thread | Add `doc` parameter to handler |
+| Empty write response | Transaction not committed | Check `doc` parameter pattern |
+| "Name" attribute error | IronPython issue | Use `DB.Element.Name.__get__()` |
+| Changes not reflected | Cached routes | Restart Revit |
+
+---
+
+## **References**
+
+- pyRevit Routes handler: `%APPDATA%\pyRevit-Master\pyrevitlib\pyrevit\routes\server\handler.py`
+- Revit API docs: https://www.revitapidocs.com/
+- FastMCP: https://github.com/jlowin/fastmcp
+- Project changelog: `CHANGELOG.md`
+- Lessons learned: `LESSONS_LEARNED.md`
